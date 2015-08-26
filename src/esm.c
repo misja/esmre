@@ -19,10 +19,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <Python.h>
 #include <structmember.h>
 
-#include "libesm/aho_corasick.h"
+#include "aho_corasick.h"
 
 typedef struct {
-    PyObject_HEAD
+	PyObject_HEAD
     ac_index*   index;
 } esm_IndexObject;
 
@@ -44,12 +44,11 @@ esm_Index_new(PyTypeObject *type, PyObject* args, PyObject* kwds) {
     
     self = (esm_IndexObject*) type->tp_alloc(type, 0);
     if (self != NULL) {
-        if ( ! (self->index = ac_index_new())) {
+        if (! (self->index = ac_index_new())) {
             Py_DECREF(self);
             return PyErr_NoMemory();
         }
     }
-    
     
     return (PyObject*) self;
 }
@@ -70,7 +69,7 @@ esm_Index_enter(esm_IndexObject* self, PyObject* args) {
         return NULL;
     }
     
-    if ( ! PyArg_ParseTuple(args, "s#|O", &keyword, &length, &object)) {
+    if (! PyArg_ParseTuple(args, "s#|O", &keyword, &length, &object)) {
         return NULL;
     }
     
@@ -104,52 +103,59 @@ esm_Index_fix(esm_IndexObject* self) {
     Py_RETURN_NONE;
 }
 
-ac_error_code
-append_result(void* data, ac_result* result)
-{
-    PyObject*   result_list = (PyObject*) data;
-    PyObject*   result_tuple = NULL;
-    
-    result_tuple = Py_BuildValue("((ii)O)", result->start,
-                                            result->end,
-                                            (PyObject*) result->object);
-    
-    if (PyList_Append(result_list, result_tuple)) {
-        Py_DECREF(result_tuple);
-        return AC_FAILURE;
-    }
-    
-    Py_DECREF(result_tuple);
-    return AC_SUCCESS;
-}
-
 static PyObject*
 esm_Index_query(esm_IndexObject* self, PyObject* args) {
     char*         phrase = NULL;
     int           length = 0;
+    ac_list*      results = NULL;
+    ac_list_item* result_item = NULL;
+    ac_result*    result = NULL;
     PyObject*     result_list = NULL;
+    PyObject*     result_tuple = NULL;
     
     if (self->index->index_state != AC_INDEX_FIXED) {
         PyErr_SetString(PyExc_TypeError, "Can't call query before fix");
         return NULL;
     }
     
-    if ( ! PyArg_ParseTuple(args, "s#", &phrase, &length)) {
+    if (! PyArg_ParseTuple(args, "s#", &phrase, &length)) {
         return NULL;
     }
     
-    if ( ! (result_list = PyList_New(0))) {
+    if (! (results = ac_list_new())) {
+        return PyErr_NoMemory();
+    }
+    
+    if (ac_index_query(self->index,
+                       (ac_symbol*) phrase,
+                       (ac_offset) length,
+                       results) != AC_SUCCESS) {
+        ac_result_list_free(results);
+        return PyErr_NoMemory();
+    }
+    
+    if (! (result_list = PyList_New(0))) {
+        ac_result_list_free(results);
         return PyErr_NoMemory();        
     }
     
-    if (ac_index_query_cb(self->index,
-                          (ac_symbol*) phrase,
-                          (ac_offset) length,
-                          append_result,
-                          result_list) != AC_SUCCESS) {
-        Py_DECREF(result_list);
-        return PyErr_NoMemory();
+    result_item = results->first;
+    while (result_item) {
+        result = (ac_result*) result_item->item;                                
+        result_tuple = Py_BuildValue("((ii)O)", result->start,
+                                                result->end,
+                                                (PyObject*) result->object);
+        
+        if (PyList_Append(result_list, result_tuple)) {
+            Py_DECREF(result_tuple);
+            return PyErr_NoMemory();
+        }
+        
+        Py_DECREF(result_tuple);
+        result_item = result_item->next;
     }
+    
+    ac_result_list_free(results);
     
     return result_list;
 }
@@ -173,46 +179,45 @@ static PyMemberDef esm_Index_members[] = {
     {NULL}  /* Sentinel */
 };
 
-
 static PyTypeObject esm_IndexType = {
-    PyObject_HEAD_INIT(NULL)
-    0,                                  /*ob_size*/
-    "esm.Index",                        /*tp_name*/
-    sizeof(esm_IndexObject),            /*tp_basicsize*/
-    0,                                  /*tp_itemsize*/
-    (destructor) esm_Index_dealloc,     /*tp_dealloc*/
-    0,                                  /*tp_print*/
-    0,                                  /*tp_getattr*/
-    0,                                  /*tp_setattr*/
-    0,                                  /*tp_compare*/
-    0,                                  /*tp_repr*/
-    0,                                  /*tp_as_number*/
-    0,                                  /*tp_as_sequence*/
-    0,                                  /*tp_as_mapping*/
-    0,                                  /*tp_hash */
-    0,                                  /*tp_call*/
-    0,                                  /*tp_str*/
-    0,                                  /*tp_getattro*/
-    0,                                  /*tp_setattro*/
-    0,                                  /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE, /*tp_flags*/
-    "Index() -> new efficient string matching index",  /* tp_doc */
-    0,		               /* tp_traverse */
-    0,		               /* tp_clear */
-    0,		               /* tp_richcompare */
-    0,		               /* tp_weaklistoffset */
-    0,		               /* tp_iter */
-    0,		               /* tp_iternext */
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "esm.Index",                   /* tp_name */
+    sizeof(esm_IndexObject),       /* tp_basicsize */
+    0,                             /* tp_itemsize */
+    (destructor) esm_Index_dealloc, /* tp_dealloc */
+    0,                             /* tp_print */
+    0,                             /* tp_getattr */
+    0,                             /* tp_setattr */
+    0,                             /* tp_reserved */
+    0,                             /* tp_repr */
+    0,                             /* tp_as_number */
+    0,                             /* tp_as_sequence */
+    0,                             /* tp_as_mapping */
+    0,                             /* tp_hash  */
+    0,                             /* tp_call */
+    0,                             /* tp_str */
+    0,                             /* tp_getattro */
+    0,                             /* tp_setattro */
+    0,                             /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT |
+        Py_TPFLAGS_BASETYPE,       /* tp_flags */
+    "Index() -> new efficient string matching index", /* tp_doc */
+    0,                             /* tp_traverse */
+    0,                             /* tp_clear */
+    0,                             /* tp_richcompare */
+    0,                             /* tp_weaklistoffset */
+    0,                             /* tp_iter */
+    0,                             /* tp_iternext */
     esm_Index_methods,             /* tp_methods */
     esm_Index_members,             /* tp_members */
-    0,           /* tp_getset */
-    0,                         /* tp_base */
-    0,                         /* tp_dict */
-    0,                         /* tp_descr_get */
-    0,                         /* tp_descr_set */
-    0,                         /* tp_dictoffset */
-    (initproc) esm_Index_init,      /* tp_init */
-    0,                         /* tp_alloc */
+    0,                             /* tp_getset */
+    0,                             /* tp_base */
+    0,                             /* tp_dict */
+    0,                             /* tp_descr_get */
+    0,                             /* tp_descr_set */
+    0,                             /* tp_dictoffset */
+    (initproc) esm_Index_init,     /* tp_init */
+    0,                             /* tp_alloc */
     esm_Index_new,                 /* tp_new */
 };
 
@@ -220,25 +225,35 @@ static PyMethodDef esm_methods[] = {
     {NULL}  /* Sentinel */
 };
 
-#ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
-#define PyMODINIT_FUNC void
-#endif
+
+static struct PyModuleDef moduledef = {
+    PyModuleDef_HEAD_INIT,
+    "esm",     /* m_name */
+    "Support for efficient string matching.",  /* m_doc */
+    -1,                  /* m_size */
+    esm_methods,         /* m_methods */
+    NULL,                /* m_reload */
+    NULL,                /* m_traverse */
+    NULL,                /* m_clear */
+    NULL,                /* m_free */
+};
+
 PyMODINIT_FUNC
-initesm(void) 
+PyInit_esm(void) 
 {
     PyObject* m;
 
     if (PyType_Ready(&esm_IndexType) < 0)
-        return;
+        return NULL;
 
-    m = Py_InitModule3("esm", esm_methods,
-                       "Support for efficient string matching.");
+    m = PyModule_Create(&moduledef);
     
     if (m == NULL) {
-        return;
+        return NULL;
     }
 
     Py_INCREF(&esm_IndexType);
     PyModule_AddObject(m, "Index", (PyObject *)&esm_IndexType);
-}
 
+    return m;
+}
