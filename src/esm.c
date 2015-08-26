@@ -35,7 +35,7 @@ decref_result_object(void* item, void* data) {
 static void
 esm_Index_dealloc(esm_IndexObject* self) {
     ac_index_free(self->index, decref_result_object);
-    self->ob_type->tp_free((PyObject*) self);
+    Py_TYPE(self)->tp_free((PyObject*) self);
 }
 
 static PyObject*
