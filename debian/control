@@ -1,0 +1,13 @@
+Source: esmre
+Maintainer: Will Harris <esmre@greatlibrary.net>
+Section: python
+Priority: optional
+Build-Depends: python3-setuptools, python3-all-dev, debhelper (>= 7)
+Standards-Version: 3.9.1
+
+Package: python3-esmre
+Architecture: any
+Depends: ${misc:Depends}, ${python3:Depends}, ${shlibs:Depends}, libesm1
+Description: Regular expression accelerator
+ Modules used to accelerate execution of a large collection of regular expressions using the Aho-Corasick algorithms.
+
