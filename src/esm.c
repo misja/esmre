@@ -19,10 +19,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <Python.h>
 #include <structmember.h>
 
-#include "aho_corasick.h"
+#include "libesm/aho_corasick.h"
 
 typedef struct {
-	PyObject_HEAD
+    PyObject_HEAD
     ac_index*   index;
 } esm_IndexObject;
 
@@ -103,59 +103,52 @@ esm_Index_fix(esm_IndexObject* self) {
     Py_RETURN_NONE;
 }
 
+ac_error_code
+append_result(void* data, ac_result* result)
+{
+    PyObject*   result_list = (PyObject*) data;
+    PyObject*   result_tuple = NULL;
+    
+    result_tuple = Py_BuildValue("((ii)O)", result->start,
+                                            result->end,
+                                            (PyObject*) result->object);
+    
+    if (PyList_Append(result_list, result_tuple)) {
+        Py_DECREF(result_tuple);
+        return AC_FAILURE;
+    }
+    
+    Py_DECREF(result_tuple);
+    return AC_SUCCESS;
+}
+
 static PyObject*
 esm_Index_query(esm_IndexObject* self, PyObject* args) {
     char*         phrase = NULL;
     int           length = 0;
-    ac_list*      results = NULL;
-    ac_list_item* result_item = NULL;
-    ac_result*    result = NULL;
     PyObject*     result_list = NULL;
-    PyObject*     result_tuple = NULL;
     
     if (self->index->index_state != AC_INDEX_FIXED) {
         PyErr_SetString(PyExc_TypeError, "Can't call query before fix");
         return NULL;
     }
     
-    if (! PyArg_ParseTuple(args, "s#", &phrase, &length)) {
+    if ( ! PyArg_ParseTuple(args, "s#", &phrase, &length)) {
         return NULL;
     }
     
-    if (! (results = ac_list_new())) {
-        return PyErr_NoMemory();
-    }
-    
-    if (ac_index_query(self->index,
-                       (ac_symbol*) phrase,
-                       (ac_offset) length,
-                       results) != AC_SUCCESS) {
-        ac_result_list_free(results);
-        return PyErr_NoMemory();
-    }
-    
-    if (! (result_list = PyList_New(0))) {
-        ac_result_list_free(results);
+    if ( ! (result_list = PyList_New(0))) {
         return PyErr_NoMemory();        
     }
     
-    result_item = results->first;
-    while (result_item) {
-        result = (ac_result*) result_item->item;                                
-        result_tuple = Py_BuildValue("((ii)O)", result->start,
-                                                result->end,
-                                                (PyObject*) result->object);
-        
-        if (PyList_Append(result_list, result_tuple)) {
-            Py_DECREF(result_tuple);
-            return PyErr_NoMemory();
-        }
-        
-        Py_DECREF(result_tuple);
-        result_item = result_item->next;
+    if (ac_index_query_cb(self->index,
+                          (ac_symbol*) phrase,
+                          (ac_offset) length,
+                          append_result,
+                          result_list) != AC_SUCCESS) {
+        Py_DECREF(result_list);
+        return PyErr_NoMemory();
     }
-    
-    ac_result_list_free(results);
     
     return result_list;
 }
@@ -224,7 +217,6 @@ static PyTypeObject esm_IndexType = {
 static PyMethodDef esm_methods[] = {
     {NULL}  /* Sentinel */
 };
-
 
 static struct PyModuleDef moduledef = {
     PyModuleDef_HEAD_INIT,
